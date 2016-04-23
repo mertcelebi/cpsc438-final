@@ -1,0 +1,6 @@
+CPSC 438, Final Project: Comparing Concurrency Control Protocols for Web Applications
+By: Feridun Mert Celebi, Nathaya (Mil) Darakananda, Tihomir Elek, Evan Hellmuth
+
+Concurrency control is an important aspect of database systems. Different concurrency control implementations are used to prevent long running transactions from stalling the database system. Two major concurrency control schemes are locking and optimistic concurrency control (OCC). Locking is pessimistic, so it tends to be favored over OCC for high contention workloads. On the other hand, in environments where most transactions are short lived and contention is rare, OCC should theoretically perform better than locking. The access behavior of database-backed web applications could be one such environment, since most user data is independent and users mostly update their own data. So, there are significant benefits to be gained from understanding how modern users interact with web applications and evaluating which type of concurrency control scheme would be most appropriate.  Currently locking-based schemes dominate the market - we want to test the viability of OCC for database-backed web applications.
+
+For more details, please reach out to feridun.celebi@yale.edu

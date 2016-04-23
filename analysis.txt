@@ -1,0 +1,99 @@
+Q1)
+          Average Transaction Duration
+    0.1ms   1ms   10ms
+'Low contention' Read only (5 records)
+ Serial     9405.98   992.156   99.8894
+ Locking A  42001   5660.41   611.86
+ Locking B  42900   5510.54   614.925
+ OCC        43414.5   5527.09   565.773
+ OCC-P      42257.7   5563.38   594.764
+ MVCC       41757.9   5522.69   605.579
+'Low contention' Read only (20 records)
+ Serial     8204.56   976.205   99.7091
+ Locking A  29758   5330.59   611.619
+ Locking B  27407.7   5300.27   559.607
+ OCC        34614.6   5348.18   555.563
+ OCC-P      34352.7   5391.33   570.563
+ MVCC       29370.8   4765.85   548.643
+'High contention' Read only (5 records)
+ Serial     9485.32   993.959   99.9072
+ Locking A  31694.5   4071.62   473.673
+ Locking B  42989.8   5470.12   619.657
+ OCC        43454.8   5604.89   571.974
+ OCC-P      42762   5486.72   585.038
+ MVCC       42834.1   5596.8    563.455
+'High contention' Read only (20 records)
+ Serial     8438.27   980.013   99.751
+ Locking A  6815.88   1226.43   130.029
+ Locking B  33010.6   5282.75   589.025
+ OCC        35876.9   5344.73   590.079
+ OCC-P      35415.6   5336.96   586.843
+ MVCC       36443.4   5311.39   579.272
+Low contention read-write (5 records)
+ Serial     9060.71   988.737   99.8377
+ Locking A  40724.7   5548.21   567.893
+ Locking B  40847.1   5529.8    586.446
+ OCC        40214.6   5481.74   613.796
+ OCC-P      40622.7   5523.14   564
+ MVCC       33163.8   5445.4    590.112
+Low contention read-write (10 records)
+ Serial     8363.44   979.067   99.7387
+ Locking A  35935.3   5413.92   583.817
+ Locking B  34347.6   5337.96   599.42
+ OCC        35007.6   5208.86   580.032
+ OCC-P      34780.7   5334.36   603.775
+ MVCC       27160.2   5411.63   549.378
+High contention read-write (1 records)
+ Serial     9691.21   995.964   99.9354
+ Locking A  25247.5   3121.65   338.659
+ Locking B  25387.6   3119.35   339.127
+ OCC        23580.4   2134.36   217.096
+ OCC-P      24049.2   2819.02   278.419
+ MVCC       41384.2   5143.88   545.146
+High contention read-write (5 records)
+ Serial     9196.89   990.614   99.8658
+ Locking A  30209.4   4091.16   479.205
+ Locking B  30128.8   4047.39   487.225
+ OCC        21122.5   2223.1    212.632
+ OCC-P      22864.9   2813.08   286.206
+ MVCC       33004.6   4394.05   421.618
+High contention read-write (10 records)
+ Serial     8599.49   982.98    99.7836
+ Locking A  16222.7   2684.92   297.954
+ Locking B  16240.4   2709.71   294.975
+ OCC        10507.3   1265.58   120.919
+ OCC-P      11222.9   1507.1    156.758
+ MVCC       20429.3   3168.16   248.45
+High contention mixed read only/read-write
+ Serial     9478    1222.17   129.278
+ Locking A  6061.13   1128.7    123.169
+ Locking B  19393.4   4098.97   646.225
+ OCC        18955.5   2580.55   281.806
+ OCC-P      21726.4   3509.05   365.731
+ MVCC       36713.5   6259.75   739.524
+
+Q2)
+- Inaccurate:
+The problem with simulations is that they are too predictable. When we use a busy loop (for 0.1ms, 1ms or 10ms), we know that every transaction will take the predetermined amount of time. But the real world is different. Some transactions will take considerably less than the given time, some will more. Getting rid of that variability makes our simulations inaccurate
+
+- Overly optimistic:
+Because we run our code in a bubble, we don’t get all the potential errors or issues (or surprises in general) that we would get in a real world case. This makes our code more prone to edge cases and expresses throughputs that over optimistic.
+
+Q3) Locking A does better in low contention read only transactions than Locking B, because it has less logic to execute (less complicated). Locking B performs better in high contention read transactions, because shared reads are allowed, less things are waiting.
+
+But as the question suggests neither of these locking schemes is equivalent to standard two-phase locking. Locking scheme B uses exclusive and shared locking types and so does two-phase locking. Data that need to be written use exclusive locks and data that need to be read use shared locks.
+
+The main difference between two schemes is how they acquire and release locks. Obviously both schemes have their phases of lock acquisition and release. In locking B, the transaction acquires all the locks, then the transaction is run and all the locks are released. In two-phase locking, the locks are acquired. But then we enter the shrinking phase where we release locks as we process them. I would assume two-stage locking would perform better than locking B, as it does not wait to acquire or release all the locks.
+
+Q4) In most cases OCC performs better than OCC_P. In most of the high contention cases (especially in mixed read only/read-write), OCC_P seems to perform better. This is contrary to what is expected but is not surprising. It is not expected because theoretically OCC_P is supposed to perform better than OCC. It is not surprising because with reasonable performance enhancements comes extra overhead (generally). What that means is that sometimes the simulation cases are simple enough that the extra overhead (thread management etc.) created by OCC_P (and parallelization) is not worth the performance gains. In those cases, OCC seems to perform better as it is simpler. Another thing is that the performance of OCC vs OCC_P is system/environment dependent. The paper we read verifies this putting emphasis on how the parallelization of OCC_P could shine in “multiprocessor environments”. Another key difference between OCC and OCC_P is the validation phase. However, the improvements that comes with the better validation phase in OCC_P may not be worth in our simulation cases, as validation may not even be the biggest bottleneck.
+
+Q5) OCC beats Locking B for the ‘high contention’ read-only (20-records) test, because of the amount of locking that happens in Locking B. Locking slows things down and that is the main reason why OCC has a leg up in the high contention case (where too much locking happens with Locking B).
+
+For the last two parts of the question, the reason why OCC performs worse than Locking B is rollbacks (bad for long transactions). OCC runs transactions first before validation (costly rollbacks).
+
+Q6) MVCC doesn’t perform well with a lot of read-writes. If there are a lot of read-writes starting, some reads from new read-writes might invalidate writes that didn’t finish yet and cause a lot of failed writes. MVCC needs to lock many things when writing too. Writes don’t hurt OCC and Locking performance as much as they hurt MVCC.
+
+MVCC sometimes does worse than serial in rare extreme cases of long writes, which could get invalidated with the reads many times and therefore fail several times in a row, which could do worse than serial.
+
+For the mixed read-only/read-write experiment MVCC performs best, since the experiment consists of 20% fast writes and 80% reads. Reads never get invalidated in MVCC and fast writes don’t allow for many reads to read after writes, so not many writes are invalidated either.
+Other methods don’t change much for the mixed experiment, while MVCC gets much better due to increased number of reads in the mixed experiment
