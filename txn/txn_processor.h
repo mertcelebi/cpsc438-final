@@ -62,7 +62,34 @@ class TxnProcessor {
 
   static void* StartScheduler(void * arg);
 
+  // ----------------------------
+
+  void Start();
+  void Finish();
+  void ExecuteTxnFancyLocking(Txn* txn);
+  void AddThreadTask(Txn *txn);
+
+
+
+  // ----------------------------
+
+  // Signal to epoch thread that it can terminate
+  bool benchmark_complete = false;
+  bool benchmark_started = false;
+
+
+  int THREAD_COUNT;
+  int threads_done;
+  Mutex threads_done_mutex;
+  uint64 global_txn_count;
+  Mutex txn_count_mutex;
+  Mutex lock_storage;
+
+  // -----------------------------
+
  private:
+
+
 
   // Serial validation
   bool SerialValidate(Txn *txn);

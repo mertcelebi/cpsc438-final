@@ -12,6 +12,7 @@
 #include <deque>
 #include <map>
 #include <vector>
+#include "utils/mutex.h"
 
 #include "txn/common.h"
 
@@ -101,7 +102,20 @@ class LockManager {
     Txn* txn_;       // Pointer to txn requesting the lock.
     LockMode mode_;  // Specifies whether this is a read or write lock request.
   };
-  unordered_map<Key, deque<LockRequest>*> lock_table_;
+
+  // One bucket in the hash table
+  struct lockBucket {
+    lockBucket(deque<LockRequest> *lock_deque) : list_of_locks(lock_deque) {}
+    deque<LockRequest>* list_of_locks;
+    Mutex key_mutex;
+  };
+
+  Mutex queue_making_mutex;
+
+  Mutex release_fun_mutex;
+
+
+  unordered_map<Key, lockBucket*> lock_table_;
 
   // Queue of pointers to transactions that:
   //  (a) were previously blocked on acquiring at least one lock, and
@@ -114,23 +128,12 @@ class LockManager {
   unordered_map<Txn*, int> txn_waits_;
 };
 
-// Version of the LockManager implementing ONLY exclusive locks.
-class LockManagerA : public LockManager {
- public:
-  explicit LockManagerA(deque<Txn*>* ready_txns);
-  inline virtual ~LockManagerA() {}
-
-  virtual bool ReadLock(Txn* txn, const Key& key);
-  virtual bool WriteLock(Txn* txn, const Key& key);
-  virtual void Release(Txn* txn, const Key& key);
-  virtual LockMode Status(const Key& key, vector<Txn*>* owners);
-};
 
 // Version of the LockManager implementing both shared and exclusive locks.
-class LockManagerB : public LockManager {
+class LockManagerC : public LockManager {
  public:
-  explicit LockManagerB(deque<Txn*>* ready_txns);
-  inline virtual ~LockManagerB() {}
+  explicit LockManagerC(deque<Txn*>* ready_txns);
+  inline virtual ~LockManagerC() {}
 
   virtual bool ReadLock(Txn* txn, const Key& key);
   virtual bool WriteLock(Txn* txn, const Key& key);

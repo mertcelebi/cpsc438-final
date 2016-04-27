@@ -20,13 +20,14 @@ using std::string;
 using std::vector;
 using std::pair;
 
-//
+
 class StaticThreadPool : public ThreadPool {
  public:
   StaticThreadPool(int nthreads)
       : thread_count_(nthreads), stopped_(false) {
     Start();
   }
+
 
   ~StaticThreadPool() {
     stopped_ = true;
@@ -38,7 +39,14 @@ class StaticThreadPool : public ThreadPool {
 
   virtual void RunTask(Task* task) {
     assert(!stopped_);
-    while (!queues_[rand() % thread_count_].PushNonBlocking(task)) {}
+
+    queues_[(thread_selection_counter++) % thread_count_].PushNonBlocking(task);
+
+    // while (!queues_[(thread_selection_counter++) % thread_count_].PushNonBlocking(task)) {}
+  }
+
+  virtual void FillThreadQueue(Task* task) {
+
   }
 
   virtual int ThreadCount() { return thread_count_; }
@@ -80,7 +88,7 @@ class StaticThreadPool : public ThreadPool {
     while (true) {
       if (tp->queues_[queue_id].PopNonBlocking(&task)) {
         task->Run();
-        delete task;
+        tp->queues_[queue_id].PushNonBlocking(task);
         // Reset backoff.
         sleep_duration = 1;
       } else {
@@ -92,10 +100,13 @@ class StaticThreadPool : public ThreadPool {
 
       if (tp->stopped_) {
         // Go through ALL queues looking for a remaining task.
+
+
         while (tp->queues_[queue_id].Pop(&task)) {
             task->Run();
             delete task;
         }
+
 
         break;
       }
@@ -103,6 +114,7 @@ class StaticThreadPool : public ThreadPool {
     return NULL;
   }
 
+  int thread_selection_counter = 0;
   int thread_count_;
   vector<pthread_t> threads_;
 
