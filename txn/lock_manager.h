@@ -13,7 +13,6 @@
 #include <map>
 #include <vector>
 #include "utils/mutex.h"
-
 #include "txn/common.h"
 
 using std::map;
@@ -97,25 +96,16 @@ class LockManager {
   //
   // then Txn1 currently holds an EXCLUSIVE lock on "key1". When Txn1 releases
   // its lock, Txn2 and Txn3 will simultaneously acquire SHARED locks on "key1".
+
   struct LockRequest {
     LockRequest(LockMode m, Txn* t) : txn_(t), mode_(m) {}
     Txn* txn_;       // Pointer to txn requesting the lock.
     LockMode mode_;  // Specifies whether this is a read or write lock request.
   };
 
-  // One bucket in the hash table
-  struct lockBucket {
-    lockBucket(deque<LockRequest> *lock_deque) : list_of_locks(lock_deque) {}
-    deque<LockRequest>* list_of_locks;
-    Mutex key_mutex;
-  };
-
-  Mutex queue_making_mutex;
-
-  Mutex release_fun_mutex;
-
-
-  unordered_map<Key, lockBucket*> lock_table_;
+  unordered_map<Key, deque<LockRequest>*> lock_table_;
+  unordered_map<Key, Mutex*> lock_table_mutexs_;
+  Mutex* create_entry_latch = new Mutex();
 
   // Queue of pointers to transactions that:
   //  (a) were previously blocked on acquiring at least one lock, and

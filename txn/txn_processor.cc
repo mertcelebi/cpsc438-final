@@ -25,7 +25,6 @@ TxnProcessor::TxnProcessor(CCMode mode)
   lm_ = new LockManagerC(&ready_txns_);
 }
 
-
 TxnProcessor::~TxnProcessor() {
   if (mode_ == LOCKING_EXCLUSIVE_ONLY || mode_ == LOCKING)
     delete lm_;
@@ -61,13 +60,10 @@ void TxnProcessor::ApplyWrites(Txn* txn) {
   }
 }
 
-
-// --------------------------------------------
-// Added for final project
 void TxnProcessor::AddThreadTask(Txn *txn) {
   tp_.RunTask(new Method <TxnProcessor, void, Txn*>(
         this,
-        &TxnProcessor::ExecuteTxnFancyLocking,
+        &TxnProcessor::ExecuteLocking,
         txn));
 }
 
@@ -79,7 +75,7 @@ void TxnProcessor::Finish() {
   benchmark_complete = true;
 }
 
-void TxnProcessor::ExecuteTxnFancyLocking(Txn* txn) {
+void TxnProcessor::ExecuteLocking(Txn* txn) {
 
   thread_local static uint64 txn_count;
 
@@ -97,8 +93,6 @@ void TxnProcessor::ExecuteTxnFancyLocking(Txn* txn) {
     }
     return;
   }
-
-  // printf("kurac 0\n");
 
   // Read everything in from readset.
   for (set<Key>::iterator it = txn->readset_.begin();
@@ -118,10 +112,8 @@ void TxnProcessor::ExecuteTxnFancyLocking(Txn* txn) {
       txn->writes_[*it] = result;
   }
 
+  bool blocked = false;
 
-   bool blocked = false;
-  // Request read locks.
-  // TODO: LOCK THE TABLE
   for (set<Key>::iterator it = txn->readset_.begin();
        it != txn->readset_.end(); it++) {
     if (!lm_->ReadLock(txn, *it)) {
@@ -182,9 +174,6 @@ void TxnProcessor::ExecuteTxnFancyLocking(Txn* txn) {
   if (benchmark_started) {
     ++txn_count;
   }
-
-  // printf("about to Release\n");
-
 
   // Release read locks.
   for (set<Key>::iterator it = txn->readset_.begin();

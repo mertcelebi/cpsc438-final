@@ -13,92 +13,138 @@ LockManagerC::LockManagerC(deque<Txn*>* ready_txns) {
 }
 
 bool LockManagerC::WriteLock(Txn* txn, const Key& key) {
-LockRequest lock_request(SHARED, txn);
+  LockRequest request(EXCLUSIVE, txn);
 
-  queue_making_mutex.Lock();
-
-  // Add the new lock_request to lock_table_.
-  if (!lock_table_.count(key)) {
-    deque<LockRequest> *lock_queue = new deque<LockRequest>(1, lock_request);
-    lockBucket* bucket = new lockBucket(lock_queue);
-    //TODO: change back
-
-    lock_table_[key] = bucket;
-    queue_making_mutex.Unlock();
-
-    (lock_table_[key]->key_mutex).Lock();
+  // Add the write lock to the queue of txns.
+  if (lock_table_.count(key)) {
+    lock_table_mutexs_[key]->Lock();
+    lock_table_[key]->push_back(request);
+    lock_table_mutexs_[key]->Unlock();
   }
+  // Or create the entry in the table.
   else {
-    (lock_table_[key]->key_mutex).Lock();
-    lock_table_[key]->list_of_locks->push_back(lock_request);
+    create_entry_latch.Lock();
+    Mutex* entry_mutex = new Mutex();
+    lock_table_mutexs_[key] = key_mutex;
+    deque<LockRequest> *lock_list = new deque<LockRequest>(1, request);
+    lock_table_[key] = lock_list;
+    create_entry_latch.Unlock();
   }
 
-  // Success for the lock acquisition of the transaction.
-  if (lock_table_[key]->list_of_locks->front().txn_ == txn) {
-    (lock_table_[key]->key_mutex).Unlock();
+  // Update txn_waits_.
+  lock_table_mutexs_[key]->Lock();
+  if (lock_table_[key]->front().txn_ == txn) {
+    lock_table_mutexs_[key]->Unlock();
     return true;
   }
-  (lock_table_[key]->key_mutex).Unlock();
-  return false;
+  else {
+    if (txn_waits_.count(txn)) {
+      txn_waits_[txn] = 1;
+    }
+    else {
+      txn_waits_[txn]++;
+    }
+
+    lock_table_mutexs_[key]->Unlock();
+    return false;
+  }
 }
 
 bool LockManagerC::ReadLock(Txn* txn, const Key& key) {
-  // printf("trying the ReadLock\n");
+  LockRequest request(SHARED, txn);
 
-  LockRequest lock_request(SHARED, txn);
-
-  // Add the new lock_request to lock_table_.
-  if (!lock_table_.count(key)) {
-    // printf("trying the ReadLock2\n");
-    deque<LockRequest> *new_lock_queue = new deque<LockRequest>(1, lock_request);
-    lockBucket* bucket = new lockBucket(new_lock_queue);
-
-    queue_making_mutex.Lock();
-    lock_table_[key] = bucket;
-    queue_making_mutex.Unlock();
-    (lock_table_[key]->key_mutex).Lock();
+  // Add the read lock to the queue of txns.
+  if (lock_table_.count(key)) {
+    lock_table_mutexs_[key]->Lock();
+    lock_table_[key]->push_back(request);
+    lock_table_mutexs_[key]->Unlock();
   }
+  // Or create the entry in the table.
   else {
-    if (lock_table_[key] == NULL){
-      // printf("ssssssssssssssssss\n");
-    }
-    (lock_table_[key]->key_mutex).Lock();
-    lock_table_[key]->list_of_locks->push_back(lock_request);
-
+    create_entry_latch.Lock();
+    Mutex* entry_mutex = new Mutex();
+    lock_table_mutexs_[key] = key_mutex;
+    deque<LockRequest> *lock_list = new deque<LockRequest>(1, request);
+    lock_table_[key] = lock_list;
+    create_entry_latch.Unlock();
   }
 
-  deque<LockRequest> *lock_queue = lock_table_[key]->list_of_locks;
-  deque<LockRequest>::iterator lock = lock_queue->begin();
-  for (; lock != lock_queue->end(); lock++) {
+  // Update txn_waits hash table.
+  lock_table_mutexs_[key]->Lock();
+
+  deque<LockRequest> *lock_list = lock_table_[key];
+  deque<LockRequest>::iterator lock;
+  for (lock = lock_list->begin();; lock != lock_list->end(); lock++) {
     if (lock->mode_ == EXCLUSIVE) {
-      (lock_table_[key]->key_mutex).Unlock();
-      return false;
+      if (txn_waits.count(txn)) {
+        txn_waits[txn] = 1;
+      }
+      else {
+        txn_waits[txn]++;
+      }
     }
   }
-  (lock_table_[key]->key_mutex).Unlock();
+  lock_table_mutexs_[key]->Unlock();
+
   return true;
 }
 
 void LockManagerC::Release(Txn* txn, const Key& key) {
-  if (!lock_table_[key]){
-    return;
-  }
+  lock_table_mutexs_[key]->Lock();
 
-  deque<LockRequest> *lock_queue = lock_table_[key]->list_of_locks;
-  deque<LockRequest>::iterator lock_req = lock_queue->begin();
-  for (; lock_req != lock_queue->end(); lock_req++) {
-     if (lock_req->txn_ == txn) {
-      printf("pusi kurac\n");
-      (lock_table_[key]->key_mutex).Lock();
+  deque<LockRequest> *lock_list = lock_table_[key];
+  deque<LockRequest>::iterator lock_i;
+  for (lock_i = lock_list->begin(); lock_i != lock_list->end(); lock_i++) {
+    // Transaction was found
+    if (lock_i->txn_ == txn) {
+      if ((i+1) != lock_list->end()) {
+        bool start = lock_i == lock_list->begin();
 
-      lock_queue->erase(lock_req);
+        if (start && ((lock_i + 1)->mode_ == EXCLUSIVE)) {
+          if (--txn_waits_[(lock_i + 1)->txn_] == 0) {
+            ready_txns_->push_back((lock_i + 1)->txn_);
+          }
+        }
 
-      (lock_table_[key]->key_mutex).Unlock();
+        if ((lock_i->mode_ == EXCLUSIVE) && ((start && (lock_i + 1)->mode_ == SHARED) ||
+          ((!start && (lock_i - 1)->mode_ == SHARED) && ((lock_i + 1)->mode_ == SHARED)))) {
+          deque<LockRequest>::iterator lock_j;
+            for (lock_j = lock_i + 1; lock_j != lock_list->end() && lock_j->mode_ == SHARED; lock_j++) {
+              if (--txn_waits_[lock_j->txn_] == 0) {
+                ready_txns_->push_back(lock_j->txn_);
+              }
+            }
+        }
+      }
+      lock_list->erase(i);
       break;
-     }
+    }
   }
+
+  lock_table_mutexs_[key]->Unlock();
 }
 
 LockMode LockManagerC::Status(const Key& key, vector<Txn*>* owners) {
+  lock_table_mutexs_[key]->Lock();
+  owners->clear();
+
+  if (lock_table_[key]->lock_list->size() == 0) {
+    lock_table_mutexs_[key]->Unlock();
+    return UNLOCKED;
+  }
+
+  if (lock_table_[key]->lock_list->begin()->mode == EXCLUSIVE) {
+    owners->push_back(lock_table_[key]->lock_list->begin()->txn_);
+    lock_table_mutexs_[key]->Unlock();
+    return EXCLUSIVE;
+  }
+
+  deque<LockRequest> *lock_list = lock_table_[key]->lock_list;
+  deque<LockRequest>::iterator lock;
+  for (lock = lock_list->begin(); lock != lock_list->end() && lock->mode_ == SHARED; lock++) {
+    owners->push_back(lock->txn_);
+  }
+
+  lock_table_mutexs_[key]->Unlock();
   return SHARED;
 }
